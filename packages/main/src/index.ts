@@ -218,8 +218,12 @@ ipcMain.on(
       mkdirSync(folderPath, { recursive: true });
     }
 
+    let applyToAll = false;
+    let actionForAll = null;
+    const ACTIONS = {SKIP: 0, OVERRIDE: 1};
     const filePromiseList: Promise<void>[] = [];
-    uploadedIcons.forEach((icon) => {
+    
+    for (const icon of uploadedIcons) {
       const dataUrl = icon.dataURL;
 
       const matches = dataUrl?.match(regex);
@@ -229,19 +233,34 @@ ipcMain.on(
       if (data && filename) {
         const formattedPath = join(folderPath, filename);
 
-        if (existsSync(formattedPath)) {
+        if (existsSync(formattedPath) && actionForAll === null) {
           const dialogOpts: MessageBoxOptions = {
             type: 'error',
             message: `Icon with the name ${filename} is already present in the collection`,
             buttons: ['Skip', 'Override'],
             title: 'Icon is already present in the collection',
+            checkboxLabel: uploadedIcons.length > 1 ? 'Apply to all' : undefined,
+            checkboxChecked: applyToAll,
           };
 
           const window = BrowserWindow.getFocusedWindow();
-          if (window) {
-            const response = dialog.showMessageBoxSync(window, dialogOpts);
-            if (response === 0) {
-              return;
+          if (applyToAll && actionForAll === ACTIONS.OVERRIDE) { 
+            continue;
+          } else if(applyToAll && actionForAll === ACTIONS.SKIP) {
+            return;
+          } else if (window) {
+            const result = await dialog.showMessageBox(window, dialogOpts);
+            if (result.checkboxChecked) {
+              applyToAll = true;
+              actionForAll = result.response;
+
+              if(result.response === ACTIONS.SKIP) {
+                return;
+              }
+            } else {
+              if(result.response === ACTIONS.SKIP) {
+                return;
+              }
             }
           }
         }
@@ -264,9 +283,9 @@ ipcMain.on(
 
         filePromiseList.push(promiseFs.writeFile(formattedPath, fileData));
       }
-    });
+    }
 
-    Promise.all(filePromiseList);
+    await Promise.all(filePromiseList);
   },
 );
 
